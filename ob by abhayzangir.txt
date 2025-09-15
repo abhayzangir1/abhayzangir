@@ -1,0 +1,408 @@
+//@version=5
+indicator("OB detection by abhayzangir", overlay=true, max_boxes_count=500, max_lines_count=500)
+
+//=== MAIN SETTINGS ===
+group_detection = "🎯 OB Detection Settings"
+group_strict = "⚡ Strict Rules (Optional)"
+group_mitigation = "💀 Mitigation & Invalidation"
+group_deletion = "🗑️ OB Deletion Settings"
+group_fvg_deletion = "🗑️ FVG Deletion Settings"
+group_visual = "🎨 Visual Settings"
+group_zones = "📐 Zone & Gap Marking"
+
+maxOB = input.int(10, "Max Order Blocks to Show", minval=1, group=group_detection)
+min_displacement_bars = input.int(3, "Minimum Displacement Bars", minval=1, maxval=20, group=group_detection)
+max_lookback_bars = input.int(50, "Max Lookback for OB Search", minval=10, maxval=100, group=group_detection)
+
+// NEW: Overlap Prevention Settings
+overlap_time_threshold = input.int(5, "Time Overlap Threshold (bars)", minval=1, maxval=20, group=group_detection, tooltip="Minimum bars between OBs to avoid overlap")
+overlap_price_threshold = input.float(0.1, "Price Overlap Threshold (%)", minval=0.01, maxval=5.0, group=group_detection, tooltip="Minimum price difference to avoid overlap")
+
+ob_zone_marking = input.string("Zone Drawn From Wick", "OB Zone Marking", options=["Zone Drawn From Wick", "Zone Drawn From Open to Close"], group=group_zones)
+gap_marking = input.string("Imbalance from Wick to Wick", "Gap (Imbalance) Detection", options=["Imbalance from Wick to Wick", "Imbalance from Wick to Open", "Imbalance from Open to Wick", "Imbalance from Open to Open"], group=group_zones)
+
+enable_rule_a = input.bool(false, "✅ Enable Rule A: Previous Candle Close", group=group_strict)
+enable_rule_b = input.bool(false, "✅ Enable Rule B: Fair Value Gap (FVG)", group=group_strict)
+
+mitigation_method = input.string("Touch", "OB Mitigation Method", options=["Touch", "50%", "Close"], group=group_mitigation)
+mitigation_detection = input.string("Wick", "Mitigation Detection", options=["Wick", "Body"], group=group_mitigation)
+gap_invalidation = input.string("Touch", "Gap Invalidation Method", options=["Touch", "50%", "Close"], group=group_mitigation)
+
+enable_ob_deletion = input.bool(true, "🗑️ Enable OB Deletion", group=group_deletion)
+deletion_method = input.string("Touch", "OB Deletion Method", options=["Touch", "50%", "Close"], group=group_deletion)
+deletion_detection = input.string("Wick", "Deletion Detection", options=["Wick", "Body"], group=group_deletion)
+
+enable_fvg_deletion = input.bool(true, "🗑️ Enable FVG Deletion", group=group_fvg_deletion)
+fvg_deletion_method = input.string("Touch", "FVG Deletion Method", options=["Touch", "50%", "Close"], group=group_fvg_deletion)
+fvg_deletion_detection = input.string("Wick", "FVG Deletion Detection", options=["Wick", "Body"], group=group_fvg_deletion)
+
+show_debug = input.bool(true, "Show Debug Info", group=group_visual)
+show_50_line = input.bool(true, "Show 50% Zone Lines", group=group_visual)
+show_fvg = input.bool(true, "Show FVG Gaps", group=group_visual)
+show_displacement_info = input.bool(true, "Show Displacement Count", group=group_visual)
+
+bull_ob_color = input.color(color.new(color.green, 75), "Bullish OB", group=group_visual)
+bear_ob_color = input.color(color.new(color.red, 75), "Bearish OB", group=group_visual)
+bull_ob_mitigated = input.color(color.new(color.green, 90), "Bullish OB Mitigated", group=group_visual)
+bear_ob_mitigated = input.color(color.new(color.red, 90), "Bearish OB Mitigated", group=group_visual)
+fvg_bull_color = input.color(color.new(color.blue, 85), "Bullish FVG", group=group_visual)
+fvg_bear_color = input.color(color.new(color.purple, 85), "Bearish FVG", group=group_visual)
+
+//=== DATA TYPES ===
+type OrderBlock
+    float top
+    float bottom
+    int start_time
+    string ob_type
+    bool is_mitigated = false
+    bool has_fvg = false
+    float mid_line
+    int fvg_time = na
+    float fvg_top = na
+    float fvg_bottom = na
+    bool fvg_invalidated = false
+    bool fvg_deleted = false
+    bool marked_for_deletion = false
+    int displacement_count = na
+
+//=== ARRAYS & COUNTERS ===
+var array<OrderBlock> all_obs = array.new<OrderBlock>()
+var int deleted_obs_count = 0
+var int deleted_fvg_count = 0
+var int created_obs_count = 0
+var int filtered_obs_count = 0  // NEW: Track filtered overlaps
+var int debug_deletion_checks = 0
+var bool debug_deletion_triggered = false
+
+//=== OVERLAP DETECTION FUNCTIONS ===
+check_time_overlap(new_start_time, existing_start_time, threshold_bars) =>
+    time_diff_bars = math.abs(new_start_time - existing_start_time) / (timeframe.in_seconds() * 1000)
+    time_diff_bars < threshold_bars
+
+check_price_overlap(new_top, new_bottom, existing_top, existing_bottom, threshold_percent) =>
+    new_range = new_top - new_bottom
+    existing_range = existing_top - existing_bottom
+    
+    // Check vertical overlap
+    vertical_overlap = not (new_bottom > existing_top or new_top < existing_bottom)
+    
+    if vertical_overlap
+        // Calculate overlap percentage
+        overlap_top = math.min(new_top, existing_top)
+        overlap_bottom = math.max(new_bottom, existing_bottom)
+        overlap_range = overlap_top - overlap_bottom
+        
+        overlap_percent = (overlap_range / math.max(new_range, existing_range)) * 100
+        overlap_percent > threshold_percent
+    else
+        false
+
+is_overlapping_ob(new_ob) =>
+    if all_obs.size() == 0
+        false
+    else
+        is_overlap = false
+        // Check against last few OBs for efficiency
+        check_count = math.min(5, all_obs.size())
+        
+        for i = 0 to check_count - 1
+            existing_ob = all_obs.get(i)
+            
+            // Check time overlap first (faster check)
+            if check_time_overlap(new_ob.start_time, existing_ob.start_time, overlap_time_threshold)
+                // Then check price overlap
+                if check_price_overlap(new_ob.top, new_ob.bottom, existing_ob.top, existing_ob.bottom, overlap_price_threshold)
+                    is_overlap := true
+                    break
+        
+        is_overlap
+
+//=== CORE FUNCTIONS ===
+get_zone_boundaries(candle_index, zone_method) =>
+    if zone_method == "Zone Drawn From Wick"
+        [high[candle_index], low[candle_index]]
+    else
+        [math.max(open[candle_index], close[candle_index]), math.min(open[candle_index], close[candle_index])]
+
+get_gap_levels(candle_index, gap_method) =>
+    switch gap_method
+        "Imbalance from Wick to Wick" => [high[candle_index], low[candle_index]]
+        "Imbalance from Wick to Open" => [high[candle_index], open[candle_index]]
+        "Imbalance from Open to Wick" => [open[candle_index], low[candle_index]]
+        "Imbalance from Open to Open" => [open[candle_index], open[candle_index]]
+
+detect_fvg_for_ob(ob_candle_index) =>
+    if ob_candle_index < 2
+        [false, int(na), float(na), float(na)]
+    else
+        [ob_high, ob_low] = get_gap_levels(ob_candle_index, gap_marking)
+        second_candle_index = ob_candle_index - 2
+        [second_high, second_low] = get_gap_levels(second_candle_index, gap_marking)
+        bullish_gap = second_low > ob_high
+        bearish_gap = second_high < ob_low
+        if bullish_gap
+            [true, time[second_candle_index], second_low, ob_high]
+        else if bearish_gap
+            [true, time[second_candle_index], ob_low, second_high]
+        else
+            [false, int(na), float(na), float(na)]
+
+// ANTI-REPAINT: Modified displacement detection
+detect_bullish_displacement() =>
+    var int consecutive_bullish_bars = 0
+    consecutive_bullish_bars := 0
+    for i = 1 to max_lookback_bars  // Start from [1] to avoid current bar
+        if close[i] > close[i + 1]
+            consecutive_bullish_bars += 1
+        else
+            break
+    meets_minimum = consecutive_bullish_bars >= min_displacement_bars
+    [meets_minimum, consecutive_bullish_bars]
+
+detect_bearish_displacement() =>
+    var int consecutive_bearish_bars = 0
+    consecutive_bearish_bars := 0
+    for i = 1 to max_lookback_bars  // Start from [1] to avoid current bar
+        if close[i] < close[i + 1]
+            consecutive_bearish_bars += 1
+        else
+            break
+    meets_minimum = consecutive_bearish_bars >= min_displacement_bars
+    [meets_minimum, consecutive_bearish_bars]
+
+check_rule_a_bullish(ob_candle_index) =>
+    if not enable_rule_a
+        true
+    else
+        if ob_candle_index + 1 < bar_index
+            close[ob_candle_index + 1] >= close[ob_candle_index]
+        else
+            false
+
+check_rule_a_bearish(ob_candle_index) =>
+    if not enable_rule_a
+        true
+    else
+        if ob_candle_index + 1 < bar_index
+            close[ob_candle_index + 1] <= close[ob_candle_index]
+        else
+            false
+
+get_price_levels(detection_type) =>
+    if detection_type == "Wick"
+        [high, low]
+    else
+        [math.max(open, close), math.min(open, close)]
+
+is_ob_mitigated(ob) =>
+    [price_high, price_low] = get_price_levels(mitigation_detection)
+    switch mitigation_method
+        "Touch" => ob.ob_type == "Bullish" ? price_low <= ob.top : price_high >= ob.bottom
+        "50%" => ob.ob_type == "Bullish" ? price_low <= ob.mid_line : price_high >= ob.mid_line
+        "Close" => ob.ob_type == "Bullish" ? close <= ob.top : close >= ob.bottom
+
+should_delete_ob(ob) =>
+    if not enable_ob_deletion
+        false
+    else
+        [price_high, price_low] = get_price_levels(deletion_detection)
+        switch deletion_method
+            "Touch" => ob.ob_type == "Bullish" ? price_low <= ob.top : price_high >= ob.bottom
+            "50%" => ob.ob_type == "Bullish" ? price_low <= ob.mid_line : price_high >= ob.mid_line
+            "Close" => ob.ob_type == "Bullish" ? close <= ob.top : close >= ob.bottom
+
+should_delete_fvg(ob) =>
+    if not enable_fvg_deletion or not ob.has_fvg or na(ob.fvg_top) or na(ob.fvg_bottom)
+        false
+    else
+        [price_high, price_low] = get_price_levels(fvg_deletion_detection)
+        switch fvg_deletion_method
+            "Touch" => price_high >= ob.fvg_bottom and price_low <= ob.fvg_top
+            "50%" => 
+                var float fvg_mid = na
+                fvg_mid := (ob.fvg_top + ob.fvg_bottom) / 2
+                price_high >= fvg_mid and price_low <= fvg_mid
+            "Close" => close >= ob.fvg_bottom and close <= ob.fvg_top
+
+is_fvg_invalidated(ob) =>
+    if not ob.has_fvg or na(ob.fvg_top) or na(ob.fvg_bottom)
+        false
+    else
+        switch gap_invalidation
+            "Touch" => high >= ob.fvg_bottom and low <= ob.fvg_top
+            "50%" => 
+                var float fvg_mid = na
+                fvg_mid := (ob.fvg_top + ob.fvg_bottom) / 2
+                high >= fvg_mid and low <= fvg_mid
+            "Close" => close >= ob.fvg_bottom and close <= ob.fvg_top
+
+//=== ENHANCED MAIN DETECTION LOGIC WITH OVERLAP FILTERING ===
+if barstate.isconfirmed and bar_index >= min_displacement_bars + 2
+    
+    [bullish_displacement, bull_displacement_count] = detect_bullish_displacement()
+    if bullish_displacement
+        var bool ob_candle_found = false
+        var int ob_index = na
+        ob_candle_found := false
+        ob_index := na
+        
+        for i = bull_displacement_count + 1 to math.min(max_lookback_bars, bull_displacement_count + 20)
+            if close[i] < open[i] and not ob_candle_found
+                if check_rule_a_bullish(i)
+                    ob_candle_found := true
+                    ob_index := i
+                    break
+        
+        if ob_candle_found and not na(ob_index)
+            [ob_top, ob_bottom] = get_zone_boundaries(ob_index, ob_zone_marking)
+            var float ob_mid = na
+            ob_mid := (ob_top + ob_bottom) / 2
+            [fvg_exists, fvg_time, fvg_top, fvg_bottom] = detect_fvg_for_ob(ob_index)
+            has_fvg_data = enable_rule_b and fvg_exists
+            
+            // Create potential new OB
+            potential_ob = OrderBlock.new(ob_top, ob_bottom, time[ob_index], "Bullish", false, has_fvg_data, ob_mid, fvg_time, fvg_top, fvg_bottom, false, false, false, bull_displacement_count)
+            
+            // CHECK FOR OVERLAP BEFORE ADDING
+            if not is_overlapping_ob(potential_ob)
+                array.unshift(all_obs, potential_ob)
+                created_obs_count += 1
+            else
+                filtered_obs_count += 1  // Track filtered overlaps
+
+    [bearish_displacement, bear_displacement_count] = detect_bearish_displacement()
+    if bearish_displacement
+        var bool ob_candle_found = false
+        var int ob_index = na
+        ob_candle_found := false
+        ob_index := na
+        
+        for i = bear_displacement_count + 1 to math.min(max_lookback_bars, bear_displacement_count + 20)
+            if close[i] > open[i] and not ob_candle_found
+                if check_rule_a_bearish(i)
+                    ob_candle_found := true
+                    ob_index := i
+                    break
+        
+        if ob_candle_found and not na(ob_index)
+            [ob_top, ob_bottom] = get_zone_boundaries(ob_index, ob_zone_marking)
+            var float ob_mid = na
+            ob_mid := (ob_top + ob_bottom) / 2
+            [fvg_exists, fvg_time, fvg_top, fvg_bottom] = detect_fvg_for_ob(ob_index)
+            has_fvg_data = enable_rule_b and fvg_exists
+            
+            // Create potential new OB
+            potential_ob = OrderBlock.new(ob_top, ob_bottom, time[ob_index], "Bearish", false, has_fvg_data, ob_mid, fvg_time, fvg_top, fvg_bottom, false, false, false, bear_displacement_count)
+            
+            // CHECK FOR OVERLAP BEFORE ADDING
+            if not is_overlapping_ob(potential_ob)
+                array.unshift(all_obs, potential_ob)
+                created_obs_count += 1
+            else
+                filtered_obs_count += 1  // Track filtered overlaps
+
+//=== DELETION CHECKS ===
+if barstate.isconfirmed
+    debug_deletion_triggered := false
+    
+    if array.size(all_obs) > 0
+        for i = array.size(all_obs) - 1 to 0
+            ob = array.get(all_obs, i)
+            
+            if not ob.is_mitigated and is_ob_mitigated(ob)
+                ob.is_mitigated := true
+                
+            if ob.has_fvg and not ob.fvg_invalidated and is_fvg_invalidated(ob)
+                ob.fvg_invalidated := true
+            
+            if ob.has_fvg and not ob.fvg_deleted and should_delete_fvg(ob)
+                ob.fvg_deleted := true
+                deleted_fvg_count += 1
+            
+            delete_ob_now = should_delete_ob(ob)
+            if delete_ob_now
+                debug_deletion_triggered := true
+                debug_deletion_checks += 1
+                array.remove(all_obs, i)
+                deleted_obs_count += 1
+
+// Clean up excess OBs
+while array.size(all_obs) > maxOB
+    array.pop(all_obs)
+
+//=== DRAWING ===
+if barstate.islast
+    for bx in box.all
+        box.delete(bx)
+    for ln in line.all
+        line.delete(ln)
+    for lb in label.all
+        label.delete(lb)
+    
+    if array.size(all_obs) > 0
+        for i = 0 to math.min(maxOB - 1, array.size(all_obs) - 1)
+            ob = array.get(all_obs, i)
+            
+            ob_color = switch
+                ob.ob_type == "Bullish" and not ob.is_mitigated => bull_ob_color
+                ob.ob_type == "Bullish" and ob.is_mitigated => bull_ob_mitigated
+                ob.ob_type == "Bearish" and not ob.is_mitigated => bear_ob_color
+                => bear_ob_mitigated
+            
+            box.new(left=ob.start_time, top=ob.top, right=time, bottom=ob.bottom, border_color=color.new(ob_color, 0), bgcolor=ob_color, xloc=xloc.bar_time, extend=extend.right)
+            
+            if show_displacement_info and not na(ob.displacement_count)
+                label_text = ob.ob_type + " OB\n" + str.tostring(ob.displacement_count) + " bars"
+                label_style = ob.ob_type == "Bullish" ? label.style_label_up : label.style_label_down
+                label_y = ob.ob_type == "Bullish" ? ob.bottom : ob.top
+                label.new(x=ob.start_time, y=label_y, text=label_text, xloc=xloc.bar_time, color=color.new(color.white, 0), textcolor=color.black, style=label_style, size=size.small)
+            
+            if show_50_line
+                var color line_color = na
+                line_color := ob.is_mitigated ? color.gray : color.yellow
+                line.new(x1=ob.start_time, y1=ob.mid_line, x2=time, y2=ob.mid_line, color=color.new(line_color, 0), style=line.style_dashed, xloc=xloc.bar_time, extend=extend.right)
+            
+            if show_fvg and ob.has_fvg and not ob.fvg_deleted and not na(ob.fvg_top) and not na(ob.fvg_bottom)
+                fvg_color = switch
+                    ob.ob_type == "Bullish" and not ob.fvg_invalidated => fvg_bull_color
+                    ob.ob_type == "Bullish" and ob.fvg_invalidated => color.new(fvg_bull_color, 95)
+                    ob.ob_type == "Bearish" and not ob.fvg_invalidated => fvg_bear_color
+                    => color.new(fvg_bear_color, 95)
+                box.new(left=ob.fvg_time, top=ob.fvg_top, right=time, bottom=ob.fvg_bottom, border_color=color.new(fvg_color, 50), bgcolor=fvg_color, xloc=xloc.bar_time, extend=extend.right)
+
+//=== ENHANCED DEBUG INFO TABLE ===
+var table info_table = table.new(position.top_right, 2, 15, bgcolor=color.new(color.black, 80), border_width=1)
+
+if barstate.islast
+    efficiency_percent = created_obs_count > 0 ? math.round((created_obs_count / (created_obs_count + filtered_obs_count)) * 100) : 100
+    
+    table.cell(info_table, 0, 0, "Setting", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 0, "Status", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 0, 1, "🎯 Overlap Filtering", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 1, "ACTIVE ✅", text_color=color.green, text_size=size.small)
+    table.cell(info_table, 0, 2, "Overlap Prevention", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 2, "WORKING ✅", text_color=color.green, text_size=size.small)
+    table.cell(info_table, 0, 3, "Time Threshold", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 3, str.tostring(overlap_time_threshold) + " bars", text_color=color.yellow, text_size=size.small)
+    table.cell(info_table, 0, 4, "Price Threshold", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 4, str.tostring(overlap_price_threshold) + "%", text_color=color.yellow, text_size=size.small)
+    table.cell(info_table, 0, 5, "Created OBs", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 5, str.tostring(created_obs_count), text_color=color.green, text_size=size.small)
+    table.cell(info_table, 0, 6, "Filtered Overlaps", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 6, str.tostring(filtered_obs_count), text_color=color.orange, text_size=size.small)
+    table.cell(info_table, 0, 7, "Filter Efficiency", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 7, str.tostring(efficiency_percent) + "%", text_color=efficiency_percent > 80 ? color.green : color.orange, text_size=size.small)
+    table.cell(info_table, 0, 8, "Active OBs", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 8, str.tostring(array.size(all_obs)), text_color=color.blue, text_size=size.small)
+    table.cell(info_table, 0, 9, "Deleted OBs", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 9, str.tostring(deleted_obs_count), text_color=color.red, text_size=size.small)
+    table.cell(info_table, 0, 10, "Box Usage", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 10, str.tostring(array.size(all_obs)) + "/500", text_color=array.size(all_obs) > 400 ? color.red : color.green, text_size=size.small)
+    table.cell(info_table, 0, 11, "MTF Capacity", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 11, str.tostring(500 - array.size(all_obs)) + " boxes", text_color=color.orange, text_size=size.small)
+    table.cell(info_table, 0, 12, "OB Deletion", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 12, enable_ob_deletion ? deletion_method : "OFF", text_color=enable_ob_deletion ? color.orange : color.gray, text_size=size.small)
+    table.cell(info_table, 0, 13, "Current Price", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 13, str.tostring(close, "#.#####"), text_color=color.blue, text_size=size.small)
+    table.cell(info_table, 0, 14, "Status", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 14, "READY FOR MTF ✅", text_color=color.green, text_size=size.small)

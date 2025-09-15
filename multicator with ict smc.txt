@@ -1,0 +1,786 @@
+//@version=6
+indicator('Multicator + LuxAlgo OB + Structure + FVG/CE + Mickes OB by abhayzangir', overlay = true, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500)
+
+// =============================
+// LIBRARY IMPORTS (Mickes MS + OB)
+// =============================
+import mickes/MarketStructure/24
+import mickes/OrderBlocks/16
+import mickes/Touched/14
+
+// =============================
+// TABLE SETTINGS
+// =============================
+groupTable   = 'Table'
+showTable    = input.bool(true, 'Show Table?', group=groupTable)
+tablePosOpt  = input.string('Top Right', 'Table Position', options=['Top Right','Bottom Right','Middle Right','Bottom Center','Bottom Left'], group=groupTable)
+tableSizeOpt = input.string('Tiny', 'Table Size', options=['Tiny','Small','Normal','Large'], group=groupTable)
+textColor    = input.color(color.black, 'Text Color', group=groupTable)
+
+// =============================
+// PRESETS (Scalping / Intraday / Swing / Custom)
+// =============================
+groupPreset  = 'Presets'
+useAuto      = input.bool(true, 'Use Auto Presets', group=groupPreset, inline='AM')
+autoStyle    = input.string('Scalping', 'Style', options=['Scalping','Intraday','Swing','Custom'], group=groupPreset, inline='AM')
+resetPreset  = input.bool(false, 'Reset to Preset (one-click)', group=groupPreset)
+
+autoActive = useAuto or resetPreset
+
+// Defaults per mode
+ema1_auto = 50, ema2_auto = 100, ema3_auto = 200
+rsi_auto  = 14, atr_auto = 14
+ml_auto   = 12, sl_auto = 26, hl_auto = 9
+bbLen_auto= 20
+
+presetDesc = switch autoStyle
+    'Scalping' => 'Fast for lower TFs: EMA 20/50/100, RSI 7, ATR 7, MACD 8/21/5, BB 20.'
+    'Intraday' => 'Balanced intraday: EMA 20/50/100, RSI 9, ATR 10, MACD 8/21/5, BB 20.'
+    'Swing'    => 'Slower swing: EMA 50/100/200, RSI 12, ATR 14, MACD 8/21/5, BB 20.'
+    => 'Custom: uses manual inputs below.'
+
+if autoStyle == 'Scalping'
+    ema1_auto := 20, ema2_auto := 50, ema3_auto := 100
+    rsi_auto := 7, atr_auto := 7
+    ml_auto := 8, sl_auto := 21, hl_auto := 5
+    bbLen_auto := 20
+else if autoStyle == 'Intraday'
+    ema1_auto := 20, ema2_auto := 50, ema3_auto := 100
+    rsi_auto := 9, atr_auto := 10
+    ml_auto := 8, sl_auto := 21, hl_auto := 5
+    bbLen_auto := 20
+else if autoStyle == 'Swing'
+    ema1_auto := 50, ema2_auto := 100, ema3_auto := 200
+    rsi_auto := 12, atr_auto := 14
+    ml_auto := 8, sl_auto := 21, hl_auto := 5
+    bbLen_auto := 20
+
+// =============================
+// CORE INDICATOR INPUTS (manual values used when Custom/manual)
+// =============================
+groupMA = 'MA'
+ema1    = input.int(50, 'EMA 1', group=groupMA, inline='E1')
+ema2    = input.int(100,'EMA 2', group=groupMA, inline='E2')
+ema3    = input.int(200,'EMA 3', group=groupMA, inline='E3')
+
+groupRSI = 'RSI'
+rsiPeriod = input.int(14, 'RSI Period', group=groupRSI)
+
+groupATR = 'ATR'
+atrPeriod = input.int(14, 'ATR Period', group=groupATR)
+
+groupBB = 'BB'
+bbLenInput = input.int(20, minval=1, title='BB Length', group=groupBB)
+
+groupMACD = 'MACD'
+macdFastIn = input.int(12, 'MACD Fast', minval=1, group=groupMACD, inline='M')
+macdSlowIn = input.int(26, 'Slow',      minval=1, group=groupMACD, inline='M')
+macdSigIn  = input.int(9,  'Signal',    minval=1, group=groupMACD, inline='M')
+
+// Effective lengths (Auto vs Custom)
+ema1LenEff = autoActive and autoStyle != 'Custom' ? ema1_auto : ema1
+ema2LenEff = autoActive and autoStyle != 'Custom' ? ema2_auto : ema2
+ema3LenEff = autoActive and autoStyle != 'Custom' ? ema3_auto : ema3
+rsiLenEff  = autoActive and autoStyle != 'Custom' ? rsi_auto  : rsiPeriod
+atrLenEff  = autoActive and autoStyle != 'Custom' ? atr_auto  : atrPeriod
+bbLenEff   = autoActive and autoStyle != 'Custom' ? bbLen_auto: bbLenInput
+macdFastEff= autoActive and autoStyle != 'Custom' ? ml_auto    : macdFastIn
+macdSlowEff= autoActive and autoStyle != 'Custom' ? sl_auto    : macdSlowIn
+macdSigEff = autoActive and autoStyle != 'Custom' ? hl_auto    : macdSigIn
+
+// =============================
+// CORE SERIES
+// =============================
+emaA   = ta.ema(close, ema1LenEff)
+emaB   = ta.ema(close, ema2LenEff)
+emaC   = ta.ema(close, ema3LenEff)
+ema200 = ta.ema(close, 200)
+
+sma50  = ta.sma(close, 50)
+sma100 = ta.sma(close, 100)
+sma200 = ta.sma(close, 200)
+
+rsiVal = ta.rsi(close, rsiLenEff)
+
+bbBasis = ta.sma(close, bbLenEff)
+bbDev   = 2.0 * ta.stdev(close, bbLenEff)
+bbUp    = bbBasis + bbDev
+bbDn    = bbBasis - bbDev
+
+atrVal  = ta.atr(atrLenEff)
+atrSm10 = ta.sma(atrVal, 10)
+
+[macdLine, macdSignal, macdHist] = ta.macd(close, macdFastEff, macdSlowEff, macdSigEff)
+
+// =============================
+// OPTIONAL PLOTS
+// =============================
+groupVis   = 'Plots'
+showEMA1   = input.bool(false, 'Show EMA1', group=groupVis)
+showEMA2   = input.bool(false, 'Show EMA2', group=groupVis)
+showEMA3   = input.bool(false, 'Show EMA3', group=groupVis)
+showSMA50  = input.bool(false, 'Show SMA50', group=groupVis)
+showSMA100 = input.bool(false, 'Show SMA100', group=groupVis)
+showSMA200 = input.bool(false, 'Show SMA200', group=groupVis)
+showMACD   = input.bool(false, 'Show MACD lines (overlay)', group=groupVis)
+
+plot(showEMA1  ? emaA      : na, color=color.teal,   title='EMA1')
+plot(showEMA2  ? emaB      : na, color=color.blue,   title='EMA2')
+plot(showEMA3  ? emaC      : na, color=color.purple, title='EMA3')
+plot(showSMA50 ? sma50     : na, color=color.orange, title='SMA50')
+plot(showSMA100? sma100    : na, color=color.red,    title='SMA100')
+plot(showSMA200? sma200    : na, color=color.maroon, title='SMA200')
+plot(showMACD  ? macdLine  : na, color=color.blue,   title='MACD Line')
+plot(showMACD  ? macdSignal: na, color=color.orange, title='MACD Signal')
+
+// =============================
+// LUXALGO-STYLE ORDER BLOCKS (OB #1)
+// =============================
+
+// Settings
+groupOB = 'OB (LuxAlgo)'
+lengthOB   = input.int(10, 'Swing Lookback', minval=3, group=groupOB)
+showBull   = input.int(3, 'Show Last Bullish OB', minval=0, group=groupOB)
+showBear   = input.int(3, 'Show Last Bearish OB', minval=0, group=groupOB)
+useBodyOB  = input.bool(false, 'Use Candle Body', group=groupOB)
+
+groupStyle = 'OB Style'
+bullCss       = input.color(color.new(#2157f3, 80), 'Bullish OB', inline='bullcss', group=groupStyle)
+bullBreakCss  = input.color(color.new(#ff1100, 80), 'Bullish Break', inline='bullcss', group=groupStyle)
+bearCss       = input.color(color.new(#ff5d00, 80), 'Bearish OB', inline='bearcss', group=groupStyle)
+bearBreakCss  = input.color(color.new(#0cb51a, 80), 'Bearish Break', inline='bearcss', group=groupStyle)
+showLabelsPol = input.bool(false, 'Show Historical Polarity Changes', group=groupStyle)
+
+// UDTs
+type ob
+    float top = na
+    float btm = na
+    int   loc = bar_index
+    bool  breaker = false
+    int   break_loc = na
+
+type swing
+    float y = na
+    int   x = na
+    bool  crossed = false
+
+// Helpers
+swings(len) =>
+    var os = 0
+    var swing top = swing.new(na, na)
+    var swing btm = swing.new(na, na)
+    upper = ta.highest(len)
+    lower = ta.lowest(len)
+    os := high[len] > upper ? 0 : low[len] < lower ? 1 : os
+    if os == 0 and os[1] != 0
+        top := swing.new(high[len], bar_index[len])
+        top
+    if os == 1 and os[1] != 1
+        btm := swing.new(low[len], bar_index[len])
+        btm
+    [top, btm]
+
+method notransp(color css) =>
+    color.rgb(color.r(css), color.g(css), color.b(css))
+
+// Track Lux OB drawings
+var array<line> ob_lines  = array.new<line>()
+var array<box>  ob_boxes  = array.new<box>()
+
+method display(ob id, color css, color break_css) =>
+    if id.breaker
+        b1 = box.new(left=id.loc, top=id.top, right=id.break_loc, bottom=id.btm, border_color=css.notransp(), bgcolor=css, xloc=xloc.bar_time)
+        b2 = box.new(left=id.break_loc, top=id.top, right=time + 1, bottom=id.btm, border_color=na, bgcolor=break_css, extend=extend.right, xloc=xloc.bar_time)
+        array.push(ob_boxes, b1), array.push(ob_boxes, b2)
+        ln1 = line.new(x1=id.loc, y1=id.top, x2=id.break_loc, y2=id.top, xloc=xloc.bar_time, color=css.notransp())
+        ln2 = line.new(x1=id.loc, y1=id.btm, x2=id.break_loc, y2=id.btm, xloc=xloc.bar_time, color=css.notransp())
+        ln3 = line.new(x1=id.break_loc, y1=id.top, x2=time + 1, y2=id.top, xloc=xloc.bar_time, extend=extend.right, color=break_css.notransp(), style=line.style_dashed)
+        ln4 = line.new(x1=id.break_loc, y1=id.btm, x2=time + 1, y2=id.btm, xloc=xloc.bar_time, extend=extend.right, color=break_css.notransp(), style=line.style_dashed)
+        array.push(ob_lines, ln1), array.push(ob_lines, ln2), array.push(ob_lines, ln3), array.push(ob_lines, ln4)
+    else
+        b = box.new(left=id.loc, top=id.top, right=time, bottom=id.btm, border_color=css.notransp(), bgcolor=css, extend=extend.right, xloc=xloc.bar_time)
+        array.push(ob_boxes, b)
+        ln1 = line.new(x1=id.loc, y1=id.top, x2=time, y2=id.top, xloc=xloc.bar_time, extend=extend.right, color=css.notransp())
+        ln2 = line.new(x1=id.loc, y1=id.btm, x2=time, y2=id.btm, xloc=xloc.bar_time, extend=extend.right, color=css.notransp())
+        array.push(ob_lines, ln1), array.push(ob_lines, ln2)
+
+// Detect swings
+n = bar_index
+[topS, btmS] = swings(lengthOB)
+maxV = useBodyOB ? math.max(close, open) : high
+minV = useBodyOB ? math.min(close, open) : low
+
+// Arrays and state
+var bullish_ob = array.new<ob>(0)
+var bearish_ob = array.new<ob>(0)
+bull_break_conf = 0
+bear_break_conf = 0
+
+// Bullish OB detection
+if close > topS.y and not topS.crossed
+    topS.crossed := true
+    minima = maxV[1]
+    maxima = minV[1]
+    loc    = time[1]
+    for i = 1 to n - topS.x - 1
+        minima := math.min(minV[i], minima)
+        maxima := minima == minV[i] ? maxV[i] : maxima
+        loc    := minima == minV[i] ? time[i]  : loc
+        loc
+    array.unshift(bullish_ob, ob.new(maxima, minima, loc))
+
+if bullish_ob.size() > 0
+    for i = bullish_ob.size() - 1 to 0
+        element = bullish_ob.get(i)
+        if not element.breaker
+            if math.min(close, open) < element.btm
+                element.breaker := true
+                element.break_loc := time
+                element.break_loc
+        else
+            if close > element.top
+                bullish_ob.remove(i)
+            else if i < showBull and topS.y < element.top and topS.y > element.btm
+                bull_break_conf := 1
+                bull_break_conf
+
+if bull_break_conf > bull_break_conf[1] and showLabelsPol
+    label.new(topS.x, topS.y, '▼', color=na, textcolor=bearCss.notransp(), style=label.style_label_down, size=size.tiny)
+
+// Bearish OB detection
+if close < btmS.y and not btmS.crossed
+    btmS.crossed := true
+    minima = minV[1]
+    maxima = maxV[1]
+    loc    = time[1]
+    for i = 1 to n - btmS.x - 1
+        maxima := math.max(maxV[i], maxima)
+        minima := maxima == maxV[i] ? minV[i] : minima
+        loc    := maxima == maxV[i] ? time[i]  : loc
+        loc
+    array.unshift(bearish_ob, ob.new(maxima, minima, loc))
+
+if bearish_ob.size() > 0
+    for i = bearish_ob.size() - 1 to 0
+        element = bearish_ob.get(i)
+        if not element.breaker
+            if math.max(close, open) > element.top
+                element.breaker := true
+                element.break_loc := time
+                element.break_loc
+        else
+            if close < element.btm
+                bearish_ob.remove(i)
+            else if i < showBear and btmS.y > element.btm and btmS.y < element.top
+                bear_break_conf := 1
+                bear_break_conf
+
+if bear_break_conf > bear_break_conf[1] and showLabelsPol
+    label.new(btmS.x, btmS.y, '▲', color=na, textcolor=bullCss.notransp(), style=label.style_label_up, size=size.tiny)
+
+// Cleanup only LuxAlgo OB drawings
+for ln in ob_lines
+    line.delete(ln)
+array.clear(ob_lines)
+for bx in ob_boxes
+    box.delete(bx)
+array.clear(ob_boxes)
+
+// Draw LuxAlgo OBs on last bar
+if barstate.islast
+    if showBull > 0 and bullish_ob.size() > 0
+        for i = 0 to math.min(showBull - 1, bullish_ob.size() - 1)
+            get_ob = bullish_ob.get(i)
+            get_ob.display(bullCss, bullBreakCss)
+    if showBear > 0 and bearish_ob.size() > 0
+        for i = 0 to math.min(showBear - 1, bearish_ob.size() - 1)
+            get_ob = bearish_ob.get(i)
+            get_ob.display(bearCss, bearBreakCss)
+
+// =============================
+// LUXALGO BOS/CHoCH STRUCTURE
+// =============================
+groupLux = '🧠 LuxAlgo Smart Money Structure'
+enableLux = input.bool(false, 'Enable LuxAlgo BOS/CHoCH', group=groupLux)
+
+lux_BULLISH_LEG = 1
+lux_BEARISH_LEG = 0
+lux_BULLISH = 1
+lux_BEARISH = -1
+lux_GREEN = #089981
+lux_RED = #F23645
+lux_MONO_BULLISH = #b2b5be
+lux_MONO_BEARISH = #5d606b
+
+lux_HISTORICAL = 'Historical'
+lux_PRESENT = 'Present'
+lux_COLORED = 'Colored'
+lux_MONOCHROME = 'Monochrome'
+lux_ALL = 'All'
+lux_BOS = 'BOS'
+lux_CHOCH = 'CHoCH'
+
+lux_SMART_GROUP = '🧠 LuxAlgo Core Settings'
+lux_INTERNAL_GROUP = '⚡ LuxAlgo Internal Structure'
+lux_SWING_GROUP = '🎯 LuxAlgo Swing Structure'
+
+lux_modeInput = input.string(lux_HISTORICAL, 'Mode', group = lux_SMART_GROUP, options = [lux_HISTORICAL, lux_PRESENT])
+lux_styleInput = input.string(lux_COLORED, 'Style', group = lux_SMART_GROUP, options = [lux_COLORED, lux_MONOCHROME])
+lux_showTrendInput = input(false, 'Color Candles', group = lux_SMART_GROUP)
+
+lux_showInternalsInput = input(true, 'Show Internal Structure', group = lux_INTERNAL_GROUP)
+lux_showInternalBullInput = input.string(lux_ALL, 'Bullish Structure', group = lux_INTERNAL_GROUP, inline = 'luxibull', options = [lux_ALL,lux_BOS,lux_CHOCH])
+lux_internalBullColorInput = input(lux_GREEN, '', group = lux_INTERNAL_GROUP, inline = 'luxibull')
+lux_showInternalBearInput = input.string(lux_ALL, 'Bearish Structure' , group = lux_INTERNAL_GROUP, inline = 'luxibear', options = [lux_ALL,lux_BOS,lux_CHOCH])
+lux_internalBearColorInput = input(lux_RED, '', group = lux_INTERNAL_GROUP, inline = 'luxibear')
+lux_internalFilterConfluenceInput = input(false, 'Confluence Filter', group = lux_INTERNAL_GROUP)
+lux_internalStructureSize = input.string('Tiny', 'Internal Label Size', group = lux_INTERNAL_GROUP, options = ['Tiny','Small','Normal'])
+
+lux_showStructureInput = input(true, 'Show Swing Structure', group = lux_SWING_GROUP)
+lux_showSwingBullInput = input.string(lux_ALL, 'Bullish Structure', group = lux_SWING_GROUP, inline = 'luxbull', options = [lux_ALL,lux_BOS,lux_CHOCH])
+lux_swingBullColorInput = input(lux_GREEN, '', group = lux_SWING_GROUP, inline = 'luxbull')
+lux_showSwingBearInput = input.string(lux_ALL, 'Bearish Structure', group = lux_SWING_GROUP, inline = 'luxbear', options = [lux_ALL,lux_BOS,lux_CHOCH])
+lux_swingBearColorInput = input(lux_RED, '', group = lux_SWING_GROUP, inline = 'luxbear')
+lux_swingStructureSize = input.string('Small', 'Swing Label Size', group = lux_SWING_GROUP, options = ['Tiny','Small','Normal'])
+lux_showSwingsInput = input(false, 'Show Swings Points', group = lux_SWING_GROUP, inline = 'luxswings')
+lux_swingsLengthInput = input.int(50, '', group = lux_SWING_GROUP, minval = 10, inline = 'luxswings')
+
+// Data types
+type lux_pivot
+    float currentLevel
+    float lastLevel
+    bool crossed
+    int barTime = time
+    int barIndex = bar_index
+
+type lux_trend
+    int bias
+
+// Variables
+var lux_pivot lux_swingHigh = lux_pivot.new(na,na,false)
+var lux_pivot lux_swingLow = lux_pivot.new(na,na,false)
+var lux_pivot lux_internalHigh = lux_pivot.new(na,na,false)
+var lux_pivot lux_internalLow = lux_pivot.new(na,na,false)
+var lux_trend lux_swingTrend = lux_trend.new(0)
+var lux_trend lux_internalTrend = lux_trend.new(0)
+
+// Colors
+var lux_swingBullishColor = lux_styleInput == 'Monochrome' ? lux_MONO_BULLISH : lux_swingBullColorInput
+var lux_swingBearishColor = lux_styleInput == 'Monochrome' ? lux_MONO_BEARISH : lux_swingBearColorInput
+
+// Functions
+lux_leg(int size) =>
+    var int leg = 0
+    newLegHigh = high[size] > ta.highest(size)
+    newLegLow = low[size] < ta.lowest(size)
+    if newLegHigh
+        leg := lux_BEARISH_LEG
+    else if newLegLow
+        leg := lux_BULLISH_LEG
+    leg
+
+lux_startOfNewLeg(int leg) => ta.change(leg) != 0
+lux_startOfBearishLeg(int leg) => ta.change(leg) == -1
+lux_startOfBullishLeg(int leg) => ta.change(leg) == +1
+
+lux_drawLabel(int labelTime, float labelPrice, string tag, color labelColor, string labelStyle) =>
+    var label l_abel = na
+    if lux_modeInput == 'Present'
+        l_abel.delete()
+    l_abel := label.new(labelTime, labelPrice, tag, xloc=xloc.bar_time, color=color(na), textcolor=labelColor, style = labelStyle, size = size.small)
+
+lux_drawStructure(lux_pivot p_ivot, string tag, color structureColor, string lineStyle, string labelStyle, string labelSize) =>
+    var line l_ine = line.new(na,na,na,na,xloc = xloc.bar_time)
+    var label l_abel = label.new(na,na)
+    if lux_modeInput == 'Present'
+        l_ine.delete()
+        l_abel.delete()
+    lux_lineStyle = lineStyle == 'dashed' ? line.style_dashed : line.style_solid
+    lux_labelSizeEnum = labelSize == 'Tiny' ? size.tiny : labelSize == 'Small' ? size.small : size.normal
+    lux_labelStyleEnum = labelStyle == 'down' ? label.style_label_down : label.style_label_up
+    l_ine := line.new(p_ivot.barTime, p_ivot.currentLevel, time, p_ivot.currentLevel, xloc=xloc.bar_time, color=structureColor, style=lux_lineStyle)
+    l_abel := label.new(math.round(0.5*(p_ivot.barIndex+bar_index)), p_ivot.currentLevel, tag, xloc=xloc.bar_index, color=color(na), textcolor=structureColor, style=lux_labelStyleEnum, size = lux_labelSizeEnum)
+
+lux_getCurrentStructure(int size, bool internal = false) =>
+    currentLeg = lux_leg(size)
+    newPivot = lux_startOfNewLeg(currentLeg)
+    pivotLow = lux_startOfBullishLeg(currentLeg)
+    pivotHigh = lux_startOfBearishLeg(currentLeg)
+    if newPivot
+        if pivotLow
+            lux_pivot p_ivot = internal ? lux_internalLow : lux_swingLow
+            p_ivot.lastLevel := p_ivot.currentLevel
+            p_ivot.currentLevel := low[size]
+            p_ivot.crossed := false
+            p_ivot.barTime := time[size]
+            p_ivot.barIndex := bar_index[size]
+            if lux_showSwingsInput and not internal
+                lux_drawLabel(time[size], p_ivot.currentLevel, p_ivot.currentLevel < p_ivot.lastLevel ? 'LL' : 'HL', lux_swingBullishColor, label.style_label_up)
+        else
+            lux_pivot p_ivot = internal ? lux_internalHigh : lux_swingHigh
+            p_ivot.lastLevel := p_ivot.currentLevel
+            p_ivot.currentLevel := high[size]
+            p_ivot.crossed := false
+            p_ivot.barTime := time[size]
+            p_ivot.barIndex := bar_index[size]
+            if lux_showSwingsInput and not internal
+                lux_drawLabel(time[size], p_ivot.currentLevel, p_ivot.currentLevel > p_ivot.lastLevel ? 'HH' : 'LH', lux_swingBearishColor, label.style_label_down)
+
+lux_displayStructure(bool internal = false) =>
+    var bullishBar = true
+    var bearishBar = true
+    if lux_internalFilterConfluenceInput
+        bullishBar := high - math.max(close, open) > math.min(close, open - low)
+        bearishBar := high - math.max(close, open) < math.min(close, open - low)
+    lux_pivot p_ivot = internal ? lux_internalHigh : lux_swingHigh
+    lux_trend t_rend = internal ? lux_internalTrend : lux_swingTrend
+    lineStyle = internal ? 'dashed' : 'solid'
+    labelSize = internal ? lux_internalStructureSize : lux_swingStructureSize
+    extraCondition = internal ? lux_internalHigh.currentLevel != lux_swingHigh.currentLevel and bullishBar : true
+    bullishColor = lux_styleInput == 'Monochrome' ? lux_MONO_BULLISH : internal ? lux_internalBullColorInput : lux_swingBullColorInput
+    if ta.crossover(close, p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
+        string tag = t_rend.bias == lux_BEARISH ? lux_CHOCH : lux_BOS
+        p_ivot.crossed := true
+        t_rend.bias := lux_BULLISH
+        displayCondition = internal ? lux_showInternalsInput and (lux_showInternalBullInput == lux_ALL or (lux_showInternalBullInput == lux_BOS and tag != lux_CHOCH) or (lux_showInternalBullInput == lux_CHOCH and tag == lux_CHOCH)) : lux_showStructureInput and (lux_showSwingBullInput == lux_ALL or (lux_showSwingBullInput == lux_BOS and tag != lux_CHOCH) or (lux_showSwingBullInput == lux_CHOCH and tag == lux_CHOCH))
+        if displayCondition
+            lux_drawStructure(p_ivot, tag, bullishColor, lineStyle, 'down', labelSize)
+    p_ivot := internal ? lux_internalLow : lux_swingLow
+    extraCondition := internal ? lux_internalLow.currentLevel != lux_swingLow.currentLevel and bearishBar : true
+    bearishColor = lux_styleInput == 'Monochrome' ? lux_MONO_BEARISH : internal ? lux_internalBearColorInput : lux_swingBearColorInput
+    if ta.crossunder(close, p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
+        string tag = t_rend.bias == lux_BULLISH ? lux_CHOCH : lux_BOS
+        p_ivot.crossed := true
+        t_rend.bias := lux_BEARISH
+        displayCondition = internal ? lux_showInternalsInput and (lux_showInternalBearInput == lux_ALL or (lux_showInternalBearInput == lux_BOS and tag != lux_CHOCH) or (lux_showInternalBearInput == lux_CHOCH and tag == lux_CHOCH)) : lux_showStructureInput and (lux_showSwingBearInput == lux_ALL or (lux_showSwingBearInput == lux_BOS and tag != lux_CHOCH) or (lux_showSwingBearInput == lux_CHOCH and tag == lux_CHOCH))
+        if displayCondition
+            lux_drawStructure(p_ivot, tag, bearishColor, lineStyle, 'up', labelSize)
+
+// Candle coloring (optional)
+lux_parsedOpen = enableLux and lux_showTrendInput ? open : na
+lux_candleColor = lux_internalTrend.bias == lux_BULLISH ? lux_swingBullishColor : lux_swingBearishColor
+plotcandle(lux_parsedOpen, high, low, close, color = lux_candleColor, wickcolor = lux_candleColor, bordercolor = lux_candleColor)
+
+// Execute LuxAlgo structure
+if enableLux
+    lux_getCurrentStructure(lux_swingsLengthInput, false)
+    lux_getCurrentStructure(5, true)
+    if lux_showInternalsInput
+        lux_displayStructure(true)
+    if lux_showStructureInput
+        lux_displayStructure(false)
+
+// =============================
+// FVGs & CEs
+// =============================
+groupFVG = 'FVG/CE'
+numDaysFVG = input.int(7, 'number of days lookback', group=groupFVG)
+showUP  = input.bool(true, "'UP' FVGs:", inline='f1', group=groupFVG)
+colUp   = input.color(color.new(color.blue, 86), '', inline='f1', group=groupFVG)
+showDN  = input.bool(true, "'DOWN' FVGs:", inline='f2', group=groupFVG)
+colDn   = input.color(color.new(color.orange, 86), '', inline='f2', group=groupFVG)
+showCE  = input.bool(true, 'show CE', inline='f3', group=groupFVG)
+ceCol   = input.color(color.new(color.black, 1), '| color:', inline='f3', group=groupFVG)
+ceStyle = input.string(line.style_dotted, '| style:', options=[line.style_dotted, line.style_solid, line.style_dashed], inline='f3', group=groupFVG)
+deleteFilledBoxes = input.bool(false, 'delete filled boxes & lines', group=groupFVG)
+
+groupFVGCond = 'FVG/CE conditions'
+CEcond    = input.bool(true, 'Use CE (as opposed to Full Fill)', group = groupFVGCond)
+useBodies = input.bool(false, 'use candle Bodies (as opposed to wicks)', group = groupFVGCond)
+
+colorNone = color.new(color.white, 100)
+_day = 24 * 3600 * 1000
+
+var array<box>  bxUpArr = array.new<box>(0)
+var array<line> lnUpArr = array.new<line>(0)
+var array<box>  bxDnArr = array.new<box>(0)
+var array<line> lnDnArr = array.new<line>(0)
+
+var array<int> _countArr       = array.new<int>(0)
+var array<int> _countArrIOFED  = array.new<int>(0)
+
+dnCE = high[1] + (low[3] - high[1]) / 2.0
+upCE = low[1]  - (low[1] - high[3]) / 2.0
+
+if low[3] > high[1] and time > timenow - numDaysFVG * _day and showDN
+    bx = box.new(bar_index - 3, low[3], bar_index, high[1], bgcolor = colDn, border_color = colorNone)
+    ln = line.new(bar_index - 3, dnCE, bar_index, dnCE, color = showCE ? ceCol : colorNone, style = ceStyle)
+    array.push(bxDnArr, bx)
+    array.push(lnDnArr, ln)
+
+if high[3] < low[1] and time > timenow - numDaysFVG * _day and showUP
+    bx = box.new(bar_index - 3, low[1], bar_index, high[3], bgcolor = colUp, border_color = colorNone)
+    ln = line.new(bar_index - 3, upCE, bar_index, upCE, color = showCE ? ceCol : colorNone, style = ceStyle)
+    array.push(bxUpArr, bx)
+    array.push(lnUpArr, ln)
+
+extendAndRemoveBx(array<box> boxArray, array<line> lineArray, array<int> countArr1, array<int> countArr2, simple bool isBull, int maxSize) =>
+    if boxArray.size() > 0
+        for i = boxArray.size() - 1 to 0 by 1
+            line ln = lineArray.get(i)
+            box bx = boxArray.get(i)
+            bx.set_right(bar_index)
+            ln.set_x2(bar_index)
+            float price       = CEcond ? ln.get_price(bar_index) : isBull ? bx.get_top() : bx.get_bottom()
+            float price_IOFED = isBull ? bx.get_bottom() : bx.get_top()
+            int m = isBull ? 1 : -1
+            float hiLo = isBull ? (useBodies ? math.max(open, close) : high) : (useBodies ? math.min(open, close) : low)
+            if hiLo * m > price * m
+                boxArray.remove(i)
+                lineArray.remove(i)
+                countArr1.push(isBull ? 1 : -1)
+                if deleteFilledBoxes
+                    bx.set_bgcolor(colorNone)
+                    ln.set_color(colorNone)
+            if hiLo * m > price_IOFED * m
+                countArr2.push(isBull ? 1 : -1)
+    if boxArray.size() > maxSize
+        box.delete(boxArray.shift())
+        line.delete(lineArray.shift())
+
+extendAndRemoveBx(bxDnArr, lnDnArr, _countArr, _countArrIOFED, true, 12)
+extendAndRemoveBx(bxUpArr, lnUpArr, _countArr, _countArrIOFED, false, 12)
+
+upThresholdLst  = array.sum(_countArr)      > array.sum(_countArr)[1]
+dnThresholdLst  = array.sum(_countArr)      < array.sum(_countArr)[1]
+upIOFEDlast     = array.sum(_countArrIOFED) > array.sum(_countArrIOFED)[1]
+dnIOFEDlast     = array.sum(_countArrIOFED) < array.sum(_countArrIOFED)[1]
+
+// =============================
+// MICKES LIBRARY-BASED OB + MARKET STRUCTURE (OB #2)
+// =============================
+groupMOB = 'Mickes OB + Market Structure'
+enableMickes = input.bool(true, 'Enable Mickes OB', group=groupMOB)
+_timeframe = input.timeframe('', 'Timeframe', group=groupMOB)
+_take      = input.string('First', 'Take', ['First', 'Last'], group=groupMOB, tooltip='When lower TF is used, pick the First/Last OB per bar.')
+_count     = input.int(3, 'Count', group=groupMOB)
+_type      = input.string('Both', 'Type', ['Bullish', 'Bearish', 'Both'], group=groupMOB, tooltip='Ignored if Market Structure is enabled.')
+_history   = input.bool(true, 'Keep history', group=groupMOB)
+_removeBroken = input.bool(true, 'Remove broken zones', group=groupMOB)
+
+groupMReq = 'Mickes Requirements'
+_reactionFactor = input.float(1.5, 'Reaction', inline='reaction', group=groupMReq)
+_reactionShow   = input.bool(true, '', inline='reaction', group=groupMReq, tooltip='Show ATR% threshold')
+_takeOut = input.bool(true, 'Take out', group=groupMReq)
+_consecutiveRisingOrFalling = input.bool(true, 'Consecutive rising/falling', group=groupMReq)
+_fairValueGap = input.bool(true, 'Fair Value Gap', group=groupMReq)
+
+groupMDisp = 'Mickes Display'
+_colorBull = input.color(color.green, 'Bull', group=groupMDisp)
+_colorBear = input.color(color.red,   'Bear', group=groupMDisp)
+
+groupMMS = 'Mickes Market structure'
+_marketStructureEnable = input.bool(true, 'Enable', group=groupMMS)
+_marketStructurePivotLength = input.int(5, 'Pivot', inline='pivot', group=groupMMS)
+_marketStructureShowPivots = input.bool(true, '', inline='pivot', group=groupMMS, tooltip='Show pivot labels')
+_marketStructureFontSize = input.int(7, 'Font size', group=groupMMS)
+_orderBlockMustBreakMarketStructureWithin = input.int(5, 'OB must break MS within', group=groupMMS, tooltip='Bars within which OB must break MS after creation')
+
+groupAlert = 'Mickes Alerts'
+_stopCreation = input.time(-1, 'Stop creation of new order blocks', group=groupAlert, tooltip='-1 to keep creating; set to last visible bar when building alerts')
+_alertRetests = input.bool(true, 'Retests', group=groupAlert)
+_alertFalseBreakouts = input.bool(true, 'False breakouts', group=groupAlert)
+_alertBreakouts = input.bool(true, 'Breakouts', group=groupAlert)
+
+// State & helpers from Mickes script
+type MarketStructureInfo
+    int LatestBreakOfStructueBarIndex
+    int LatestChangeOfCharacterBarIndex
+
+var _marketStructureInfo = MarketStructureInfo.new(-1, -1)
+var zones = OrderBlocks.Zones.new(0, _count, array.new<OrderBlocks.Zone>(_count), array.new<OrderBlocks.Zone>())
+var orderBlockSettings = OrderBlocks.Settings.new(_takeOut, _reactionFactor, _marketStructureEnable ? 'Both' : _type, _consecutiveRisingOrFalling, _fairValueGap, _count, _history, _colorBull, _colorBear, _reactionShow, _removeBroken, false, _alertRetests, _alertFalseBreakouts, _alertBreakouts, '{0} on order block.')
+var foundZones = array.new<OrderBlocks.Zone>()
+var priceAction = MarketStructure.PriceAction.new(Liquidity = MarketStructure.Liquidity.new(array.new<MarketStructure.Pivot>(), array.new<MarketStructure.Pivot>(), 1, 5))
+
+// Method and functions
+method Take(array<OrderBlocks.Zone> zonesArr, string take) =>
+    switch take
+        'Last' => zonesArr.reverse()
+    OrderBlocks.Zone returnZone = na
+    for zoneX in zonesArr
+        if not na(zoneX)
+            if _marketStructureEnable ? priceAction.Swing.Trend == zoneX.Type : true
+                returnZone := zoneX
+                break
+    returnZone
+
+GetZone(OrderBlocks.Settings orderBlockSettings, float pivotHigh, float pivotLow) =>
+    tfToUse = _timeframe == '' ? timeframe.period : _timeframe
+    if _timeframe == '' or timeframe.in_seconds(_timeframe) >= timeframe.in_seconds(timeframe.period)
+        if barstate.isfirst
+            orderBlockSettings.CreateCreationZone := true
+        request.security(syminfo.tickerid, tfToUse, OrderBlocks.Create(orderBlockSettings, pivotHigh, pivotLow), lookahead = barmerge.lookahead_off)
+    else
+        if barstate.isfirst
+            orderBlockSettings.CreateCreationZone := false
+        lowerTimeframeZones = request.security_lower_tf(syminfo.tickerid, _timeframe, OrderBlocks.Create(orderBlockSettings, pivotHigh, pivotLow), ignore_invalid_timeframe = true)
+        lowerTimeframeZones.Take(_take)
+
+// Always compute Mickes OB pivots and GetZone (consistency)
+[pivotHigh, pivotLow] = OrderBlocks.Pivots(orderBlockSettings)
+zone_req = GetZone(orderBlockSettings, pivotHigh, pivotLow)
+
+// Execute Mickes MS + OB (use the computed zone_req)
+if enableMickes
+    // Initialize Swing structure
+    if _marketStructureEnable
+        if barstate.isfirst
+            priceAction.Swing := MarketStructure.Structure.new(_marketStructurePivotLength, _marketStructurePivotLength, MarketStructure.Type.Swing, 0, -1, false, '', color(na), array.new<box>(), array.new<box>(), array.new<MarketStructure.StructureBreak>(), array.new<MarketStructure.Pivot>(), _marketStructureFontSize, false, false, false)
+        MarketStructure.Pivot(priceAction.Swing)
+        if _marketStructureShowPivots
+            MarketStructure.PivotLabels(priceAction.Swing)
+        if MarketStructure.BreakOfStructure(priceAction.Swing)
+            _marketStructureInfo.LatestBreakOfStructueBarIndex := bar_index
+        if MarketStructure.ChangeOfCharacter(priceAction.Swing)
+            _marketStructureInfo.LatestChangeOfCharacterBarIndex := bar_index
+
+    // Use zone only when creation isn’t stopped
+    if _stopCreation == -1 or time <= _stopCreation
+        if not na(zone_req) and na(zone_req[1])  // only draw OB on one bar
+            zone_req.BarIndex := bar_index - 2
+            if _marketStructureEnable
+                array.unshift(foundZones, zone_req)
+            else
+                OrderBlocks.Draw(zone_req, orderBlockSettings)
+                OrderBlocks.Replace(zones, zone_req, orderBlockSettings)
+                OrderBlocks.Remove(zones, orderBlockSettings)
+
+    // Gate by MS within window
+    if _marketStructureEnable and (_marketStructureInfo.LatestBreakOfStructueBarIndex >= bar_index - 2 or _marketStructureInfo.LatestChangeOfCharacterBarIndex >= bar_index - 2)
+        for zoneItem in foundZones
+            if zoneItem.Type == priceAction.Swing.Trend and zoneItem.BarIndex >= bar_index - 2 - _orderBlockMustBreakMarketStructureWithin and na(zoneItem.LatestBreakoutBarIndex)
+                OrderBlocks.Draw(zoneItem, orderBlockSettings)
+                OrderBlocks.Replace(zones, zoneItem, orderBlockSettings)
+        OrderBlocks.Remove(zones, orderBlockSettings)
+        foundZones.clear()
+
+    // Handle interactions (retests, false breakouts, breakouts)
+    OrderBlocks.Interactions(zones.Zones, orderBlockSettings)
+
+// =============================
+// MULTICATOR TABLE (OB + STRUCTURE + FVG/CE + Mickes OB)
+// =============================
+
+// Position
+pos = switch tablePosOpt
+    'Top Right'     => position.top_right
+    'Bottom Right'  => position.bottom_right
+    'Middle Right'  => position.middle_right
+    'Bottom Center' => position.bottom_center
+    'Bottom Left'   => position.bottom_left
+
+// Size
+sz = switch tableSizeOpt
+    'Tiny'   => size.tiny
+    'Small'  => size.small
+    'Normal' => size.normal
+    'Large'  => size.large
+
+// Create compact table 6x10
+var table t = table.new(pos, 6, 10, border_width=2, border_color=color.gray, frame_color=color.gray, frame_width=2)
+
+// Helpers
+fmt(v) => str.tostring(math.round_to_mintick(v))
+biasColor(val, ref) =>
+    val > ref ? color.new(#26A69A,0) : val < ref ? color.new(#EF5350,0) : color.new(#BDBDBD,0)
+
+cell(lbl, val, col, row, bg) =>
+    table.cell(t, col,   row, text=lbl, bgcolor=color.gray, text_color=color.black, text_size=sz)
+    table.cell(t, col+1, row, text=val, bgcolor=bg,         text_color=color.black, text_size=sz)
+
+// OB stats for table
+get_active_count_bull() =>
+    ct = 0
+    if bullish_ob.size() > 0
+        for i = 0 to bullish_ob.size() - 1
+            e = bullish_ob.get(i)
+            if not e.breaker
+                ct += 1
+    ct
+
+get_active_count_bear() =>
+    ct = 0
+    if bearish_ob.size() > 0
+        for i = 0 to bearish_ob.size() - 1
+            e = bearish_ob.get(i)
+            if not e.breaker
+                ct += 1
+    ct
+
+if barstate.islast and showTable
+    // Row 0: Active preset mode and systems status
+    table.merge_cells(t, 0, 0, 5, 0)
+    activeMode = (useAuto or resetPreset) ? autoStyle : 'Custom'
+    systemsStatus = (enableLux ? ' + LUX SMC' : '') + (enableMickes ? ' + MICKES' : '')
+    table.cell(t, 0, 0, bgcolor=color.black, text_color=color.white, text='Mode: ' + activeMode + systemsStatus + ' — ' + presetDesc, text_size=sz)
+
+    // Row 1: EMA pairs + RSI
+    cell('EMA1/2',   fmt(emaA) + '/' + fmt(emaB), 0, 1, biasColor(close, (emaA+emaB)/2))
+    cell('EMA3/200', fmt(emaC) + '/' + fmt(ema200), 2, 1, biasColor(close, emaC))
+    cell('RSI',      fmt(rsiVal) + ' (len ' + str.tostring(rsiLenEff) + ')', 4, 1, rsiVal > 60 ? color.new(#26A69A,0) : rsiVal < 40 ? color.new(#EF5350,0) : color.new(#BDBDBD,0))
+
+    // Row 2: SMA 50/100/200
+    cell('SMA50',  fmt(sma50),  0, 2, biasColor(close, sma50))
+    cell('SMA100', fmt(sma100), 2, 2, biasColor(close, sma100))
+    cell('SMA200', fmt(sma200), 4, 2, biasColor(close, sma200))
+
+    // Row 3: BB
+    cell('BBasis', fmt(bbBasis), 0, 3, biasColor(close, bbBasis))
+    cell('BB U',   fmt(bbUp),    2, 3, color.new(#BDBDBD,0))
+    cell('BB L',   fmt(bbDn),    4, 3, color.new(#BDBDBD,0))
+
+    // Row 4: ATR
+    cell('ATR', fmt(atrVal) + ' (len ' + str.tostring(atrLenEff) + ')', 0, 4, atrVal > atrSm10 ? color.new(#26A69A,0) : atrVal < atrSm10 ? color.new(#EF5350,0) : color.new(#BDBDBD,0))
+
+    // Row 5: MACD
+    macdBg = macdLine > macdSignal ? color.new(#26A69A,0) : macdLine < macdSignal ? color.new(#EF5350,0) : color.new(#BDBDBD,0)
+    cell('MACD', 'L:' + fmt(macdLine) + ' S:' + fmt(macdSignal) + ' (' + str.tostring(macdFastEff) + '/' + str.tostring(macdSlowEff) + '/' + str.tostring(macdSigEff) + ')', 0, 5, macdBg)
+
+    // Row 6: OB (LuxAlgo) summary
+    bull_total = bullish_ob.size()
+    bear_total = bearish_ob.size()
+    bull_active = get_active_count_bull()
+    bear_active = get_active_count_bear()
+    total_active = bull_active + bear_active
+    obBg = total_active > 0 ? color.new(#FFD700, 0) : color.new(#BDBDBD, 0)
+    ob_info_text = 'Bulls:' + str.tostring(bull_total) + ' (' + str.tostring(bull_active) + ')  ' +
+                   'Bears:' + str.tostring(bear_total) + ' (' + str.tostring(bear_active) + ')' +
+                   '  Show:' + str.tostring(showBull) + '/' + str.tostring(showBear)
+    cell('🎯 Order Blocks (LuxAlgo)', ob_info_text, 0, 6, obBg)
+
+    // Row 7: LUXALGO BOS/CHoCH STRUCTURE
+    if enableLux
+        lux_trend_status = lux_internalTrend.bias == 1 ? 'BULL' : lux_internalTrend.bias == -1 ? 'BEAR' : 'NEUT'
+        luxBg = lux_internalTrend.bias != 0 ? color.new(#00FF88, 0) : color.new(#BDBDBD, 0)
+        lux_structure_status = lux_showInternalsInput ? ' +INT' : ''
+        lux_swing_status = lux_showStructureInput ? ' +SWING' : ''
+        lux_candle_status = lux_showTrendInput ? ' +CANDLES' : ''
+        lux_info_text = 'Trend: ' + lux_trend_status + lux_structure_status + lux_swing_status + lux_candle_status
+        cell('🧠 LuxAlgo BOS/CHoCH', lux_info_text, 0, 7, luxBg)
+    else
+        cell('🧠 LuxAlgo BOS/CHoCH', 'LuxAlgo Smart Money Structure: DISABLED', 0, 7, color.new(#BDBDBD, 0))
+
+    // Row 8: FVG/CE summary
+    upCount  = bxUpArr.size()
+    dnCount  = bxDnArr.size()
+    fvgBg = (upCount + dnCount) > 0 ? color.new(#9E9E9E, 0) : color.new(#BDBDBD, 0)
+    ceStatus = showCE ? 'CE:ON' : 'CE:OFF'
+    bodyStatus = useBodies ? 'Bodies' : 'Wicks'
+    fvg_text = 'UP:' + str.tostring(upCount) + '  DN:' + str.tostring(dnCount) + '  ' + ceStatus + '  ' + bodyStatus
+    cell('🧩 FVGs & CEs', fvg_text, 0, 8, fvgBg)
+
+    // Row 9: Mickes OB summary
+    mCount = enableMickes ? zones.Zones.size() : 0
+    mBg = enableMickes and mCount > 0 ? color.new(#90CAF9, 0) : color.new(#BDBDBD, 0)
+    sc = _stopCreation != -1 ? 'LOCK' : 'LIVE'
+    msStatus = _marketStructureEnable ? ' +MS' : ''
+    tfDisp = _timeframe == '' ? 'Chart' : _timeframe
+    mickes_info = 'Zones:' + str.tostring(mCount) + msStatus + '  ' + sc + '  TF:' + tfDisp
+    cell('🏗️ Mickes OB', mickes_info, 0, 9, mBg)
+
+// =============================
+// GLOBAL BACKGROUND (no local-scope call)
+// =============================
+creationBg = (enableMickes and _stopCreation != -1 and time >= _stopCreation) ? color.new(color.red, 70) : na
+bgcolor(creationBg)
