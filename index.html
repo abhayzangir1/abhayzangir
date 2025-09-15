@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Abhay Zangir | Portfolio showcasing AI Tools, Web/App Projects, Graphic Designing.">
+<title>Abhay Zangir | AI Tools • Graphic Designer • Web Developer • Computer Applications</title>
+<style>
+/* Global */
+:root {
+  --radius: 10px;
+}
+* { box-sizing: border-box; }
+body {
+  margin:0;
+  font-family:"Segoe UI",sans-serif;
+  background:#fdfdfd;
+  color:#222;
+  display:flex;
+  flex-direction:column;
+  min-height:100vh;
+  transition: background 0.5s ease, color 0.5s ease;
+}
+header, footer {
+  padding:1rem;
+  text-align:center;
+}
+header h1 {
+  margin:0;
+  font-size:1.6rem;
+}
+header h2 {
+  margin:0.4rem 0 0;
+  font-weight:normal;
+  font-size:1rem;
+  color:#555;
+}
+main {
+  flex:1;
+  display:grid;
+  grid-template-columns:1fr 2fr;
+  gap:1rem;
+  padding:1rem;
+}
+section {
+  padding:1rem;
+  border-radius:var(--radius);
+}
+h3 {
+  margin-top:0;
+  font-size:1.2rem;
+}
+a { color: inherit; }
+a:focus-visible, .btn:focus-visible, button:focus-visible, .project-card:focus-visible, .script-card:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* About — centered block */
+.left { 
+  background:#fafafa; 
+  border:1px solid #eee; 
+  border-radius:var(--radius);
+  display:grid;
+  gap:1rem;
+  align-content:start;
+}
+.about-section {
+  display:grid;
+  place-items:center; /* centers both axes in grid container */ 
+  min-height: clamp(220px, 34vh, 360px);
+  padding: clamp(0.8rem, 2vw, 1.25rem);
+  border-radius: var(--radius);
+}
+.about-inner {
+  max-width: 65ch; /* ~50–75 characters per line for readability */
+  margin: 0 auto;
+  text-align: center;
+  line-height: 1.7;
+}
+.about-inner h3 { margin-bottom: .4rem; }
+.about-inner p { margin: .4rem 0; }
+
+/* Right column shell */
+.right { background:#fff; border:1px solid #eee; border-radius:var(--radius); }
+
+/* Projects */
+.projects {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:0.8rem;
+}
+.project-card {
+  border:1px solid #ddd;
+  border-radius:8px;
+  overflow:hidden;
+  background:#fff;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+  display:flex;
+  flex-direction:column;
+}
+.project-card:hover { transform: translateY(-3px); }
+.project-card img {
+  width:100%;
+  height:110px;
+  object-fit:cover;
+}
+.project-card .content {
+  padding:0.6rem;
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+}
+.project-card h4 {
+  margin:0.2rem 0;
+  font-size:0.98rem;
+}
+
+/* Buttons */
+.btn {
+  display:inline-block;
+  margin-top:0.45rem;
+  padding:0.38rem 0.7rem;
+  border-radius:6px;
+  font-size:0.88rem;
+  text-decoration:none;
+  font-weight:700;
+  text-align:center;
+  transition: color .25s ease, background .25s ease, border-color .25s ease, box-shadow .25s ease, transform .1s ease;
+  border:2px solid transparent;
+}
+.btn:hover { transform: translateY(-1px); }
+
+/* Scripts */
+.scripts {
+  display:grid;
+  gap:0.6rem;
+}
+.script-card {
+  border:1px solid #ddd;
+  border-radius:8px;
+  padding:0.6rem 0.7rem;
+  background:#fdfdfd;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.script-card h4 {
+  margin:0;
+  font-size:0.92rem;
+}
+.script-card .btn { padding:0.32rem 0.6rem; font-size:0.85rem; }
+
+/* Footer */
+footer {
+  background:#f4f4f4;
+  margin-top:auto;
+  padding-top:1rem;
+  padding-bottom:1rem;
+}
+footer a {
+  margin:0 0.6rem;
+  text-decoration:none;
+  font-weight:700;
+}
+
+/* === THEMES === */
+
+/* Classic — refined contrast, elevation, and states */
+body.theme-classic {
+  background: #fffdfa;
+  color:#1b1b1b;
+}
+body.theme-classic header {
+  color:#fff;
+  background: linear-gradient(90deg, #ff9800 0%, #fb8c00 50%, #f57c00 100%);
+  box-shadow: 0 4px 16px rgba(245,124,0,.35);
+}
+body.theme-classic .left, 
+body.theme-classic .right {
+  background:#ffffff;
+  border:1px solid #f1e3d2;
+  box-shadow: 0 2px 10px rgba(0,0,0,.06);
+}
+body.theme-classic .about-section {
+  background: linear-gradient(180deg, #fffaf2 0%, #ffffff 100%);
+  border: 1px solid #f2d7b5;
+  box-shadow: 0 3px 14px rgba(255,152,0,.18);
+}
+body.theme-classic .about-inner h3 {
+  color:#2a2a2a;
+  border-bottom:2px solid rgba(255,152,0,.35);
+  padding-bottom:.35rem;
+}
+body.theme-classic .project-card {
+  border-color:#f2d7b5;
+  box-shadow: 0 2px 8px rgba(0,0,0,.05);
+}
+body.theme-classic .project-card:hover {
+  border-color:#ff9800;
+  box-shadow: 0 8px 20px rgba(255,152,0,.25);
+}
+body.theme-classic .script-card {
+  border-color:#f2d7b5;
+  background:#fffdf8;
+}
+body.theme-classic .script-card:hover {
+  border-color:#ff9800;
+  box-shadow: 0 6px 16px rgba(255,152,0,.22);
+  transform: translateY(-2px);
+}
+body.theme-classic .btn {
+  color:#bf360c;
+  background:#ffffff;
+  border-color:#ff9800;
+  box-shadow: 0 0 0 0 rgba(0,0,0,0);
+}
+body.theme-classic .btn:hover {
+  color:#ffffff;
+  background:#bf360c;
+  border-color:#bf360c;
+  box-shadow: 0 6px 16px rgba(191,54,12,.35);
+}
+body.theme-classic .theme-switcher button {
+  background:#fff;
+  color:#5a3b00;
+  border-color:#ffcc80;
+}
+body.theme-classic .theme-switcher button:hover {
+  border-color:#ff9800;
+  box-shadow: 0 0 0 3px rgba(255,152,0,.2) inset;
+}
+body.theme-classic .theme-switcher button.active {
+  outline:2px solid #bf360c;
+  color:#bf360c;
+}
+
+/* Vintage — higher contrast sepia, serif, tactile surfaces */
+body.theme-vintage {
+  background:#f5ecd7;
+  color:#3b2f2f;
+  font-family:"Georgia", serif;
+}
+body.theme-vintage header {
+  background: linear-gradient(90deg, #c2a878 0%, #b3925a 60%, #8c6b3a 100%);
+  color:#fff;
+  text-shadow: 0 1px 0 rgba(0,0,0,.2);
+  box-shadow: 0 3px 16px rgba(92,71,49,.35);
+}
+body.theme-vintage .left, 
+body.theme-vintage .right {
+  background: #fcf7e9;
+  border:1px solid #d8c8a9;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(91,70,54,.10), inset 0 1px 0 rgba(255,255,255,.6);
+}
+body.theme-vintage .about-section {
+  background:#fff9ef;
+  border:1px solid #d8c8a9;
+  box-shadow: 0 2px 10px rgba(91,70,54,.12), inset 0 1px 0 rgba(255,255,255,.6);
+}
+body.theme-vintage .about-inner h3 {
+  color:#4a3a2a;
+  letter-spacing:.3px;
+  border-bottom:2px solid rgba(139,109,74,.45);
+  padding-bottom:.35rem;
+}
+body.theme-vintage .project-card {
+  background:#fffaf0;
+  border-color:#d8c8a9;
+  box-shadow: 0 2px 8px rgba(91,70,54,.12);
+}
+body.theme-vintage .project-card:hover {
+  border-color:#8c6b3a;
+  box-shadow: 0 10px 24px rgba(91,70,54,.25);
+  transform: translateY(-4px);
+}
+body.theme-vintage .script-card {
+  background:#fff9ef;
+  border-color:#d8c8a9;
+}
+body.theme-vintage .script-card:hover {
+  border-color:#8c6b3a;
+  box-shadow: 0 8px 20px rgba(91,70,54,.22);
+  transform: translateY(-2px);
+}
+body.theme-vintage a, 
+body.theme-vintage .btn {
+  color:#5c4731;
+}
+body.theme-vintage .btn {
+  background:#fffdf6;
+  border-color:#8c6b3a;
+  box-shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 2px 0 rgba(0,0,0,.06);
+}
+body.theme-vintage .btn:hover {
+  color:#ffffff;
+  background:#6f532f;
+  border-color:#6f532f;
+  box-shadow: 0 8px 18px rgba(111,83,47,.28);
+}
+body.theme-vintage .theme-switcher button {
+  background:#fcf7e9;
+  color:#5c4731;
+  border-color:#d8c8a9;
+}
+body.theme-vintage .theme-switcher button:hover {
+  border-color:#8c6b3a;
+  box-shadow: 0 0 0 3px rgba(140,107,58,.18) inset;
+}
+body.theme-vintage .theme-switcher button.active {
+  outline:2px solid #6f532f;
+  color:#6f532f;
+}
+
+/* Enhanced Neon Theme */
+@keyframes neon-pulse {
+  0%, 100% { 
+    text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff, 0 0 15px #00ffff, 0 0 20px #00ffff;
+  }
+  50% { 
+    text-shadow: 0 0 2px #00ffff, 0 0 5px #00ffff, 0 0 8px #00ffff, 0 0 12px #00ffff;
+  }
+}
+@keyframes neon-flicker {
+  0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { 
+    text-shadow: 0 0 5px #ff00ff, 0 0 10px #ff00ff, 0 0 20px #ff00ff, 0 0 35px #ff00ff, 0 0 50px #ff00ff;
+  }
+  20%, 24%, 55% { 
+    text-shadow: 0 0 2px #ff00ff, 0 0 5px #ff00ff, 0 0 8px #ff00ff;
+  }
+}
+@keyframes border-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff, 0 0 15px #00ffff;
+  }
+  50% {
+    box-shadow: 0 0 3px #00ffff, 0 0 8px #00ffff, 0 0 12px #00ffff;
+  }
+}
+body.theme-neon {
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a0033 50%, #0a0a0a 100%);
+  color: #ffffff;
+  font-family: "Orbitron", "Segoe UI", sans-serif;
+}
+body.theme-neon header { 
+  background: rgba(0, 0, 0, 0.7);
+  border-bottom: 2px solid #00ffff;
+  backdrop-filter: blur(10px);
+}
+body.theme-neon header h1 {
+  color: #ff00ff;
+  animation: neon-flicker 3s infinite;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+body.theme-neon header h2 {
+  color: #00ffff;
+  text-shadow: 0 0 8px #00ffff;
+  animation: neon-pulse 2s infinite;
+}
+body.theme-neon h3 {
+  color: #ffff00;
+  text-shadow: 0 0 8px #ffff00;
+  border-bottom: 1px solid #ffff00;
+  padding-bottom: 0.3rem;
+}
+body.theme-neon .left, body.theme-neon .right {
+  background: rgba(0, 20, 40, 0.3);
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  border-radius: 12px;
+  backdrop-filter: blur(5px);
+  box-shadow: 0 4px 15px rgba(0, 255, 255, 0.1);
+}
+body.theme-neon .about-section {
+  background: rgba(0, 10, 20, 0.6);
+  border: 1px solid rgba(0,255,255,.4);
+  box-shadow: 0 0 12px rgba(0,255,255,.25);
+}
+body.theme-neon .about-inner h3 {
+  border-bottom: 1px solid #ffff00;
+}
+body.theme-neon .project-card {
+  background: rgba(0, 10, 20, 0.6);
+  border: 1px solid #00ffff;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+body.theme-neon .project-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  border-color: #ff00ff;
+  box-shadow: 0 8px 25px rgba(255, 0, 255, 0.4);
+  animation: border-glow 1.5s infinite;
+}
+body.theme-neon .project-card h4 {
+  color: #ffffff;
+  text-shadow: 0 0 5px #ffffff;
+}
+body.theme-neon .script-card {
+  background: rgba(0, 10, 20, 0.6);
+  border: 1px solid #ffff00;
+  box-shadow: 0 0 8px rgba(255, 255, 0, 0.2);
+  transition: all 0.3s ease;
+}
+body.theme-neon .script-card:hover {
+  border-color: #00ff00;
+  box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+  transform: scale(1.02);
+}
+body.theme-neon .script-card h4 {
+  color: #ffffff;
+  text-shadow: 0 0 3px #ffffff;
+}
+body.theme-neon .btn {
+  background: transparent;
+  color: #00ffff;
+  border: 2px solid #00ffff;
+  text-shadow: 0 0 8px #00ffff;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+}
+body.theme-neon .btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+body.theme-neon .btn:hover::before { left: 100%; }
+body.theme-neon .btn:hover {
+  color: #ff00ff;
+  border-color: #ff00ff;
+  text-shadow: 0 0 12px #ff00ff;
+  box-shadow: 0 0 20px rgba(255, 0, 255, 0.5);
+  transform: scale(1.05);
+}
+body.theme-neon .theme-switcher button {
+  background: rgba(0, 0, 0, 0.7);
+  color: #00ffff;
+  border: 1px solid #00ffff;
+  text-shadow: 0 0 5px #00ffff;
+}
+body.theme-neon .theme-switcher button:hover {
+  background: rgba(0, 255, 255, 0.1);
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+}
+body.theme-neon .theme-switcher button.active {
+  background: rgba(255, 0, 255, 0.2);
+  border-color: #ff00ff;
+  color: #ff00ff;
+  outline: 2px solid #ff00ff;
+  text-shadow: 0 0 8px #ff00ff;
+}
+body.theme-neon footer {
+  background: rgba(0, 0, 0, 0.8);
+  border-top: 2px solid #00ffff;
+  backdrop-filter: blur(10px);
+}
+body.theme-neon footer a {
+  color: #00ffff;
+  text-shadow: 0 0 5px #00ffff;
+  transition: all 0.3s ease;
+}
+body.theme-neon footer a:hover {
+  color: #ff00ff;
+  text-shadow: 0 0 10px #ff00ff;
+  transform: scale(1.1);
+}
+body.theme-neon ul li {
+  color: #ffffff;
+  text-shadow: 0 0 3px #ffffff;
+  margin-bottom: 0.3rem;
+}
+body.theme-neon p {
+  color: #e0e0e0;
+  text-shadow: 0 0 2px #ffffff;
+  line-height: 1.6;
+}
+
+/* Motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+/* Responsive */
+@media(max-width:768px){
+  main { grid-template-columns:1fr; }
+  .projects { grid-template-columns:1fr 1fr; }
+  header h1 { font-size: 1.4rem; }
+  header h2 { font-size: 0.9rem; }
+}
+@media(max-width:480px){
+  .projects { grid-template-columns:1fr; }
+  header h1 { font-size: 1.2rem; }
+  header h2 { font-size: 0.85rem; }
+}
+</style>
+</head>
+<body class="theme-classic">
+<header>
+  <h1>Abhay Zangir | Web/App Developer • Graphic Designer  </h1>
+  <h2>Portfolio showcasing AI Tools, Web and App Projects, Graphic Designing, Learning, Creativity, and Digital Solutions.</h2>
+  <div class="theme-switcher" role="group" aria-label="Theme switcher">
+    <button data-theme="theme-classic" class="active" aria-pressed="true">Classic</button>
+    <button data-theme="theme-neon" aria-pressed="false">Neon</button>
+    <button data-theme="theme-vintage" aria-pressed="false">Vintage</button>
+  </div>
+</header>
+
+<main>
+  <!-- Left -->
+  <div class="left">
+    <section class="about-section" id="about">
+      <div class="about-inner">
+        <h3>About Me</h3>
+        <p>I am Abhay Zangir, currently pursuing BCA and completed 12th with PCMB.</p>
+        <p>I design and develop web and mobile applications, create logos and marketing materials, and craft creative solutions using modern tools and AI.</p>
+        <p>I enjoy exploring new technologies, building practical projects, and bringing innovative ideas to life. Skilled in AI tools and prompt engineering.</p>
+      </div>
+    </section>
+
+    <section>
+      <h3>Skills</h3>
+      <ul>
+        <li>AI Tools & Automation</li>
+        <li>Web & App Development</li>
+        <li>Logo & Graphic Design (AI-assisted)</li>
+        <li>Prompt Engineering</li>
+        <li>Pine Script (TradingView)</li>
+        <li>Forex Trading</li>
+        <li>Basic Microsoft Word & Excel</li>
+        <li>AI for Web/App Developing</li>
+        <li>Self-Learning & Research Skills</li>
+      </ul>
+    </section>
+  </div>
+
+  <!-- Right -->
+  <div class="right">
+    <section>
+      <h3>Featured Projects</h3>
+      <div class="projects">
+        <div class="project-card" tabindex="0">
+          <img src="images/inklingo.png" alt="Inklingo">
+          <div class="content">
+            <h4>Inklingo</h4>
+            <a class="btn" href="https://youware.app/project/inklingobyabhayzangir-1n070tfk06?enter_from=share&invite_code=KM8JF4WE4Q" target="_blank" rel="noopener">View</a>
+          </div>
+        </div>
+        <div class="project-card" tabindex="0">
+          <img src="images/mindleap.png" alt="Mindleap">
+          <div class="content">
+            <h4>Mindleap</h4>
+            <a class="btn" href="https://youware.app/project/mindleapbyabhayzangir-96ucuxg077?enter_from=share&invite_code=KM8JF4WE4Q" target="_blank" rel="noopener">View</a>
+          </div>
+        </div>
+        <div class="project-card" tabindex="0">
+          <img src="images/dressdeck.png" alt="DressDeck">
+          <div class="content">
+            <h4>DressDeck</h4>
+            <a class="btn" href="https://youware.app/project/dressdeckbyabhayzangir-m5oakeyebw?enter_from=share&invite_code=KM8JF4WE4Q" target="_blank" rel="noopener">View</a>
+          </div>
+        </div>
+        <div class="project-card" tabindex="0">
+          <img src="images/blockiva.png" alt="Blockiva">
+          <div class="content">
+            <h4>Blockiva</h4>
+            <a class="btn" href="https://youware.app/project/blockivabyabhayzangir-yes4dzg263?enter_from=share&invite_code=KM8JF4WE4Q" target="_blank" rel="noopener">View</a>
+          </div>
+        </div>
+        <div class="project-card" tabindex="0">
+          <img src="images/retroos.png" alt="RetroOS">
+          <div class="content">
+            <h4>RetroOS</h4>
+            <a class="btn" href="https://youware.app/project/retroosbyabhayzangir-g2veqfax5x?enter_from=share&invite_code=KM8JF4WE4Q" target="_blank" rel="noopener">View</a>
+          </div>
+        </div>
+        <div class="project-card" tabindex="0">
+          <img src="images/neocyberos.png" alt="NeoCyberOS">
+          <div class="content">
+            <h4>NeoCyberOS</h4>
+            <a class="btn" href="https://youware.app/project/neocyberosbyabhayzangir-9ip2g3c5g3?enter_from=share&invite_code=KM8JF4WE4Q" target="_blank" rel="noopener">View</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h3>Pine Script Indicators</h3>
+      <div class="scripts">
+        <div class="script-card" tabindex="0">
+          <h4>ICT Killzones & Pivots</h4>
+          <a class="btn" href="MyPineScripts/ict killzones n pivots.txt" target="_blank" rel="noopener">View</a>
+        </div>
+        <div class="script-card" tabindex="0">
+          <h4>MTF OB & FVG</h4>
+          <a class="btn" href="MyPineScripts/mtf OB n FVG.txt" target="_blank" rel="noopener">View</a>
+        </div>
+        <div class="script-card" tabindex="0">
+          <h4>Multicator with ICT SMC</h4>
+          <a class="btn" href="MyPineScripts/multicator with ict smc.txt" target="_blank" rel="noopener">View</a>
+        </div>
+        <div class="script-card" tabindex="0">
+          <h4>OB by AbhayZangir</h4>
+          <a class="btn" href="MyPineScripts/ob by abhayzangir.txt" target="_blank" rel="noopener">View</a>
+        </div>
+        <div class="script-card" tabindex="0">
+          <h4>SMC Toolkit Enhanced</h4>
+          <a class="btn" href="MyPineScripts/smc toolkit enhanced.txt" target="_blank" rel="noopener">View</a>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <a href="mailto:abhayzangir@gmail.com" target="_blank" rel="noopener">Email</a>
+  <a href="https://discord.com/users/1310903076361736194" target="_blank" rel="noopener">Discord</a>
+  <a href="https://instagram.com/abhay.zangir" target="_blank" rel="noopener">Instagram</a>
+  <a href="https://github.com/abhayzangir1" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script>
+// Theme switcher with persistence
+const buttons = document.querySelectorAll(".theme-switcher button");
+const body = document.body;
+
+function applyTheme(theme) {
+  body.className = theme;
+  buttons.forEach(b => {
+    const active = b.dataset.theme === theme;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  localStorage.setItem("theme", theme);
+}
+
+buttons.forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    applyTheme(btn.dataset.theme);
+  });
+});
+
+// On load, restore theme
+const savedTheme = localStorage.getItem("theme");
+if (savedTheme) applyTheme(savedTheme);
+</script>
+</body>
+</html>
